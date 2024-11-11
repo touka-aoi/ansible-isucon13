@@ -1,12 +1,15 @@
+# コメントがついているところを書き換えます
+# 本番: がついているものは本番時にも書き換える必要があるものです
+
 deploy_branch: "main" # githubでデプロイするブランチ
 
 project_root: "/home/isucon/mygo" # 開発用ディレクトリ
 
 github:
-  owner: "touka-aoi" # リポジトリのオーナ
+  owner: "touka-aoi" # リポジトリのオーナに書き換える
   repo: 
-    name: "isucon-go"
-    url: "git@github.com:touka-aoi/isucon-go.git"
+    name: "isucon-go" # リポジトリ名に書き換える
+    url: "git@github.com:touka-aoi/isucon-go.git" # リポジトリSSHに書き換える
 
 go_path: "/home/isucon/local/golang/bin/go"
 
@@ -16,9 +19,9 @@ alloy:
   service_name: "alloy"
 
 app:
-  bin: "/home/isucon/webapp/go/isupipe" #appのsystemdのunitファイルからexecStartで指定されているパスに書き換える
-  dir: "/home/isucon/webapp/go"
-  service_name: "isupipe-go" # サービス名を変更する
+  bin: "/home/isucon/webapp/go/isupipe" #本番: 実行パスを書き換える
+  dir: "/home/isucon/webapp/go"  #本番: 実行パスを書き換える
+  service_name: "isupipe-go" #本番: サービス名に書き換える
 
 nginx:
   access_log_file: "/var/log/nginx/access.log"

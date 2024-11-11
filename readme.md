@@ -1,4 +1,10 @@
 ### 初回手順
+書き換えないといけないファイル
+- inventory/inventory.yaml
+- vars/seacret.yaml
+- vars/vars.yaml
+- observe/alloy/auth.alloy
+
 inventory/inventory.yaml内で設定してください
 - ansible_host
 - ansible_ssh_private_key_file
@@ -6,6 +12,7 @@ inventory/inventory.yaml内で設定してください
 vars/vars.yaml内で設定してください
 - github.owner: リポジトリのユーザー名
 - github.repo: リポジトリ名
+- github.url: リポジトリのSSHアドレス
 
 vars/seacret.yaml内で設定してください
 - seacret.github.repo: fine-grained personal access token (PAT)
@@ -14,6 +21,29 @@ vars/seacret.yaml内で設定してください
     - Repository permissions
       - contents: read and write
       - Administration: read and write
+
+observe/alloy/auth.alloy
+- token
+- prometheus_user
+- tempo_user
+- loki_user
+
+token
+- MyAccounts -> Access Policies -> Create aceess policy でトークン発行ページへ遷移
+metrics, logs, tracesのread, writeにチェックしてトークンを発行する
+
+promethus_user
+- MyAccounts -> launch -> Prometheus -> send metricsへ遷移
+usernameをコピー
+
+tempo_user
+- MyAccounts -> launch -> tempo -> send metricsへ遷移
+usernameをコピー
+
+loki_user
+- MyAccounts -> launch -> loki -> send metricsへ遷移
+usernameをコピー
+
 
 下記を実行し環境構築を実行します
 
