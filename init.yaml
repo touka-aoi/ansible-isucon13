@@ -1,0 +1,197 @@
+- name: "Install Tools"
+  hosts: all
+  vars_files:
+    - vars/vars.yaml
+  remote_user: isucon
+  tasks:
+    - name: Install Tools
+      become: true
+      ansible.builtin.apt:
+        name:
+          - git
+
+- name: "Setup Observers"
+  hosts: all
+  become: true
+  tasks:
+    - name: "Configuration nginx"
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/nginx/nginx.conf
+        dest: "/etc/nginx/nginx.conf"
+        mode: "0777"
+
+    - name: Configuration mysql
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/mysql/mysqld.cnf
+        dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+        mode: "0777"
+
+    - name: Restart nginx
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: nginx
+        daemon_reload: true
+
+    - name: Restart mysql
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: mysql
+        daemon_reload: true
+      become: true
+
+- name: "Setup Grafana Alloy"
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Alloy
+      ansible.builtin.include_role:
+        name: grafana.grafana.alloy
+      vars:
+        alloy_config: "// empty"
+
+    - name: Configuration Alloy
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/alloy/config.alloy
+        dest: "/etc/alloy/config.alloy"
+        mode: "0777"
+
+    - name: Copy Env Alloy
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/alloy/auth.alloy
+        dest: "/etc/alloy/auth.alloy"
+        mode: "0777"
+
+    - name: Restart alloy
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: alloy
+        daemon_reload: true
+
+- name: "Setup Mytop"
+  hosts: all
+  become: true
+  vars_files:
+    - vars/vars.yaml
+  tasks:
+    - name: "Set mytop"
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/mytop/mytop
+        dest: /usr/local/bin/mytop
+        mode: "0777"
+
+    - name: Upload unit file
+      ansible.builtin.copy:
+        remote_src: false
+        src: observe/mytop/mytop.service
+        dest: /etc/systemd/system/mytop.service
+        mode: "0777"
+
+    - name: Start mytop
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: mytop
+        daemon_reload: true
+
+- name: Ensure project root exists
+  hosts: all
+  vars_files:
+    - vars/vars.yaml
+    - vars/seacret.yaml
+  tasks:
+    - name: Create directory
+      ansible.builtin.file:
+        path: "{{ project_root }}"
+        state: directory
+        owner: isucon
+        group: isucon
+        mode: '0755'
+      become: true
+
+- name: "Setup GitHub"
+  hosts: all
+  vars_files:
+    - vars/vars.yaml
+    - vars/seacret.yaml
+  become: true
+  become_user: isucon
+  tasks:
+    - name: Generate ssh key
+      ansible.builtin.shell:
+        cmd: |
+          ssh-keygen -t ed25519 -f /home/isucon/.ssh/id_ed25519 -N ""
+        creates: /home/isucon/.ssh/id_ed25519
+
+    - name: "Cat Publickey"
+      ansible.builtin.command: cat /home/isucon/.ssh/id_ed25519.pub
+      register: ssh_pubkey
+      changed_when: false
+
+    - name: Set git config name
+      community.general.git_config:
+        name: user.name
+        value: "isucon_{{ server_id }}"
+        scope: global
+
+    - name: Set git config email
+      community.general.git_config:
+        name: user.email
+        value: "isucon@example.com"
+        scope: global
+
+    - name: Set GihHub Key
+      community.general.github_deploy_key:
+        owner: "{{ github.owner }}"
+        repo: "{{ github.repo.name }}"
+        name: "isucon_{{ server_id }}"
+        key: "{{ ssh_pubkey.stdout }}"
+        token: "{{ seacret.github.token }}"
+        read_only: false
+
+    - name: Git init
+      ansible.builtin.shell:
+        cmd: "cd {{ project_root }} && git init && git remote add origin {{ github.repo.url }} "
+        creates: "{{ project_root }}/.git"
+
+    - name: Pull
+      ansible.builtin.git:
+        repo: "{{ github.repo.url }}"
+        dest: "{{ project_root }}"
+        accept_newhostkey: true
+        force: true
+        version: "{{ deploy_branch }}"
+
+- name: "Touch log files"
+  hosts: all
+  become: true
+  remote_user: isucon
+  vars_files:
+    - vars/vars.yaml
+  tasks:
+    - name: "Touch nginx log"
+      ansible.builtin.file:
+        path: "{{ nginx.access_log_file }}"
+        state: touch
+        mode: "777"
+
+    - name: "Touch mysql log"
+      ansible.builtin.file:
+        path: "{{ db.slow_log_file }}"
+        state: touch
+        mode: "777"
+
+    - name: "Change permission of nginx log folder"
+      ansible.builtin.file:
+        path: "/var/log/nginx"
+        mode: "777"
+        recurse: true
+
+    - name: "Change permission of slow log folder"
+      ansible.builtin.file:
+        path: "/var/log/mysql"
+        mode: "777"
+        recurse: true

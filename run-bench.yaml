@@ -1,0 +1,12 @@
+- name: Run Bench
+  hosts: all
+  become: true
+  become_user: isucon
+  vars_files:
+    - vars/vars.yaml
+  tasks:
+    - name: "Bench"
+      ansible.builtin.command:
+        cmd: "./bench run --enable-ssl"
+        chdir: "/home/isucon"
+      changed_when: false

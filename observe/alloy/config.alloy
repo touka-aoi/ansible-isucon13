@@ -1,0 +1,311 @@
+local.file "auth" {
+  filename = "/etc/alloy/auth.alloy"
+}
+
+// オープンテレメトリ
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "localhost:4317"
+  }
+
+  output {
+    logs  = [otelcol.exporter.loki.default.input]
+    metrics = [otelcol.exporter.prometheus.default.input]
+    traces = [otelcol.exporter.otlp.grafanacloud.input] 
+  }
+}
+
+// プロメテウス
+otelcol.exporter.prometheus "default" {
+    gc_frequency = "30s"
+    forward_to = [prometheus.remote_write.grafanacloud.receiver]
+}
+
+prometheus.remote_write "grafanacloud" {
+  endpoint {
+    url = "https://prometheus-prod-49-prod-ap-northeast-0.grafana.net/api/prom/push"
+
+    metadata_config {
+        send_interval = "10s"
+    }
+
+    basic_auth {
+      username = json_decode(local.file.auth.content).prometheus_user
+      password = json_decode(local.file.auth.content).token
+    }
+  }
+}
+
+// テンポ
+otelcol.exporter.otlp "grafanacloud" {
+  client {
+    endpoint = "tempo-prod-20-prod-ap-northeast-0.grafana.net:443"
+    auth = otelcol.auth.basic.grafanacloud.handler
+  }
+}
+
+otelcol.auth.basic "grafanacloud" {
+  username = json_decode(local.file.auth.content).tempo_user
+  password = json_decode(local.file.auth.content).token
+}
+
+// ロキ
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.grafanacloud.receiver]
+}
+
+// パイロスコープ (プロファイル)
+// pyroscope.write "isucon13_rensyu_job" {
+//     endpoint {
+//             url = "https://profiles-prod-019.grafana.net"
+
+//             basic_auth {
+//                     username = "json_decode(local.file.auth.content).pyroscope_user"
+//                     password = "json_decode(local.file.auth.content).token"
+//             }
+//     }
+// }
+
+// pyroscope.scrape "isucon13_rensyu_scrape" {
+//     targets    = [{"__address__" = "localhost:8080", "service_name" = "isucon13_rensyu"}]
+//     forward_to = [pyroscope.write.isucon13_rensyu_job.receiver]
+
+//     profiling_config {
+//             profile.process_cpu {
+//                     enabled = true
+//                         path = "/debug/pprof/profile"
+//             }
+
+//             profile.godeltaprof_memory {
+//                     enabled = true
+//                         path = "/debug/pprof/heap"
+//             }
+
+//             profile.memory { // disable memory, use godeltaprof_memory instead
+//                     enabled = false
+//             }
+
+//             profile.godeltaprof_mutex {
+//                     enabled = true
+//                         path = "/debug/pprof/mutex"
+//             }
+
+//             profile.mutex { // disable mutex, use godeltaprof_mutex instead
+//                     enabled = false
+//             }
+
+//             profile.godeltaprof_block {
+//                     enabled = true
+//                         path = "/debug/pprof/block"
+//             }
+
+//             profile.block { // disable block, use godeltaprof_block instead
+//                     enabled = false
+//             }
+
+//             profile.goroutine {
+//                     enabled = true
+//                         path = "/debug/pprof/goroutine"
+//             }
+//     }
+// }
+
+// ロキ nginx
+local.file_match "nginx_access_log" {
+    path_targets = [{"__path__" = "/var/log/nginx/access.log"}]
+    sync_period = "5s"
+}
+
+loki.source.file "log_scrape" {
+    targets    = local.file_match.nginx_access_log.targets
+    forward_to = [loki.process.filter_nginx_access_log.receiver]
+    tail_from_end = true
+}
+
+loki.process "filter_nginx_access_log" {
+    forward_to = [loki.relabel.regex.receiver]
+
+        stage.static_labels {
+        values = {
+            app = "nginx",
+            type = "access",
+        }
+    }
+
+        stage.label_drop {
+                values = ["filename"]
+        }
+
+    stage.json {
+        expressions = {
+            time = "time",
+            host = "host",
+            port = "port",
+            method = "method",
+            uri = "uri",
+            status = "status",
+            body_bytes = "body_bytes",
+            referer = "referer",
+            ua = "ua",
+            request_time = "request_time",
+            response_time = "response_time",
+        }
+    }
+
+    stage.timestamp {
+            source = "time"
+            format = "2006-01-02T15:04:05Z07:00"
+    }
+
+    // 正規化したいパラメータを抽出する
+    stage.labels {
+            values = {
+            status_normalized = "status",
+            uri_normalized = "uri",
+            method_normalized = "method",
+            }
+    }
+}
+
+loki.write "grafanacloud" {
+    endpoint {
+        url = "https://logs-prod-030.grafana.net/loki/api/v1/push"
+
+        basic_auth {
+            username = json_decode(local.file.auth.content).loki_user
+            password = json_decode(local.file.auth.content).token
+        }
+    }
+}
+
+loki.relabel "regex" {
+  forward_to = [loki.write.grafanacloud.receiver]
+
+  // 2XX, 5XX
+  rule {
+    source_labels = ["status_normalized"]
+    regex = "^([0-9])[0-9]+$"
+    replacement = "${1}XX"
+    target_label = "status_normalized"
+  }
+
+  // クエリパラメータの削除
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^(.*)\\?(.+)$"
+        replacement = "$1"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/user/[a-zA-Z0-9]+$"
+        replacement = "/api/user/[a-zA-Z0-9]"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/statistics+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/statistics"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/user/[a-zA-Z0-9]+/icon+$"
+        replacement = "/api/user/[a-zA-Z0-9]+/icon"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/reaction$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/reaction"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/enter+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/enter"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/exit+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/exit"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/livecomment+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/livecomment"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/moderate+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/moderate"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/report+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/report"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/livecomment/[a-zA-Z0-9]+/report+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/report"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/user/[a-zA-Z0-9]+/statistics+$"
+        replacement = "/api/user/[a-zA-Z0-9]+/statistics"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/user/[a-zA-Z0-9]+/theme+$"
+        replacement = "/api/user/[a-zA-Z0-9]+/theme"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/ngwords+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/ngwords"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/ngwords+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/ngwords"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/user/[a-zA-Z0-9]+/livestream+$"
+        replacement = "/api/user/[a-zA-Z0-9]+/livestream"
+        target_label = "uri_normalized"
+  }
+
+  rule {
+        source_labels = ["uri_normalized"]
+        regex = "^/api/livestream/[a-zA-Z0-9]+/ngwords+$"
+        replacement = "/api/livestream/[a-zA-Z0-9]+/ngwords"
+        target_label = "uri_normalized"
+  }
+}

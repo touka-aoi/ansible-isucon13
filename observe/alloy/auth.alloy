@@ -1,0 +1,6 @@
+{
+  "token": "glc_xxx",
+  "prometheus_user": "1111",
+  "tempo_user": "1111",
+  "loki_user": "1111"
+}

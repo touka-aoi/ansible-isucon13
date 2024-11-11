@@ -1,0 +1,47 @@
+- name: My first play
+  hosts: all
+  become: true
+  become_user: isucon
+  vars_files:
+    - vars/vars.yaml
+  tasks:
+    - name: Pull
+      ansible.builtin.git:
+        repo: "{{ github.repo.url }}"
+        dest: "{{ project_root }}"
+        version: "{{ deploy_branch }}"
+        force: true
+
+    - name: "Build"
+      ansible.builtin.command:
+        cmd: "{{ go_path }} build -o {{ app.bin }}"
+        chdir: "{{ app.dir }}"
+      changed_when: false
+
+    - name: "Restart Systemd"
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: "{{ app.service_name }}"
+        daemon_reload: true
+
+- name: Adapt Alloy Config
+  hosts: all
+  vars_files:
+    - vars/vars.yaml
+  tasks:
+    - name: "Set alloy conf file"
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ alloy.repo }}"
+        dest: "{{ alloy.original }}"
+        mode: '0644'
+      become: true
+
+    - name: "Restart alloy"
+      ansible.builtin.systemd_service:
+        state: restarted
+        name: "{{ alloy.service_name }}"
+        daemon_reload: true
+      become: true

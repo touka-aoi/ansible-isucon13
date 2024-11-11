@@ -1,0 +1,27 @@
+deploy_branch: "main" # githubでデプロイするブランチ
+
+project_root: "/home/isucon/mygo" # 開発用ディレクトリ
+
+github:
+  owner: "touka-aoi" # リポジトリのオーナ
+  repo: 
+    name: "isucon-go"
+    url: "git@github.com:touka-aoi/isucon-go.git"
+
+go_path: "/home/isucon/local/golang/bin/go"
+
+alloy:
+  repo: "{{ project_root }}/alloy/config.alloy"
+  original: "/etc/alloy/config.alloy"
+  service_name: "alloy"
+
+app:
+  bin: "/home/isucon/webapp/go/isupipe" #appのsystemdのunitファイルからexecStartで指定されているパスに書き換える
+  dir: "/home/isucon/webapp/go"
+  service_name: "isupipe-go" # サービス名を変更する
+
+nginx:
+  access_log_file: "/var/log/nginx/access.log"
+
+db:
+  slow_log_file: "/var/log/mysql/access.log"
