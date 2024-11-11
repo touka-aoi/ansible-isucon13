@@ -44,6 +44,9 @@ loki_user
 - MyAccounts -> launch -> loki -> send metricsへ遷移
 usernameをコピー
 
+grafna cloud
+- observe/grafana/ISUCON-xxx.json を grafana cloud -> dashboards -> new -> importからupoload
+
 
 下記を実行し環境構築を実行します
 
