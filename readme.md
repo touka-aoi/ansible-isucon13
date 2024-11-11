@@ -5,16 +5,16 @@
 - vars/vars.yaml
 - observe/alloy/auth.alloy
 
-inventory/inventory.yaml内で設定してください
+inventory/inventory.yaml
 - ansible_host
 - ansible_ssh_private_key_file
 
-vars/vars.yaml内で設定してください
+vars/vars.yaml
 - github.owner: リポジトリのユーザー名
 - github.repo: リポジトリ名
 - github.url: リポジトリのSSHアドレス
 
-vars/seacret.yaml内で設定してください
+vars/seacret.yaml
 - seacret.github.repo: fine-grained personal access token (PAT)
   - PATはアクセス権を以下に設定
     - Only select repositries: リポジトリを設定
